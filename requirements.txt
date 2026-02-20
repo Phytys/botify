@@ -1,0 +1,6 @@
+fastapi>=0.110,<0.120
+uvicorn[standard]>=0.27,<0.35
+sqlmodel>=0.0.20,<0.0.25
+pydantic>=2.7,<2.10
+slowapi>=0.1.8,<0.2
+python-dotenv>=1.0,<2.0

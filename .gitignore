@@ -1,0 +1,39 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker (keep Dockerfile, docker-compose.yml; ignore local overrides)
+docker-compose.override.yml
+docker-compose.*.local.yml
+.docker/
+
+# Data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

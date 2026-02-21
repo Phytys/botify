@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -100,3 +101,22 @@ def verify_pow_solution(token: str, counter: int, diff_bits: int) -> bool:
     msg = f"{token}:{counter}".encode("utf-8")
     digest = hashlib.sha256(msg).digest()
     return leading_zero_bits(digest) >= diff_bits
+
+
+# --- Single-use PoW replay guard (in-memory, single-instance) ---
+
+_used_lock = threading.Lock()
+_used_tokens: dict[str, float] = {}
+
+
+def mark_pow_used(token: str, expiry: float) -> None:
+    """Mark a solved PoW token as consumed. Raises ValueError if replayed."""
+    key = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _used_lock:
+        expired = [k for k, exp in _used_tokens.items() if exp < now]
+        for k in expired:
+            del _used_tokens[k]
+        if key in _used_tokens:
+            raise ValueError("POW token already used")
+        _used_tokens[key] = expiry

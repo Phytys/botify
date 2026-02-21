@@ -1,6 +1,6 @@
 # Those notes relate to serving Botify on same VPS as wher I have "Echo" and "MuRP" installed.
 
-
+NOTE: Those notes are written by the agent that works in the other repo where the other apps are served from.
 ----------------
 
 

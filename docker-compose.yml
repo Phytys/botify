@@ -3,14 +3,15 @@ services:
     build: .
     container_name: botify
     restart: unless-stopped
+    env_file: .env
     environment:
-      - BOTIFY_SECRET=${BOTIFY_SECRET:-dev-secret-change-me}
       - BOTIFY_DATABASE_URL=sqlite:////data/botify.db
-      # Default POW bits are small; raise these if you see spam.
-      - BOTIFY_POW_REGISTER_BITS=${BOTIFY_POW_REGISTER_BITS:-16}
-      - BOTIFY_POW_SUBMIT_BITS=${BOTIFY_POW_SUBMIT_BITS:-15}
-      - BOTIFY_POW_VOTE_BITS=${BOTIFY_POW_VOTE_BITS:-13}
     volumes:
       - ./data:/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

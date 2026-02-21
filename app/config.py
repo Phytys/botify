@@ -14,16 +14,31 @@ class Settings:
     public_base_url: str
 
 
+_DEV_SECRET = "dev-secret-change-me"
+
+
 def get_settings() -> Settings:
     secret_key = os.getenv("BOTIFY_SECRET", "")
+    dev_mode = os.getenv("BOTIFY_DEV", "").lower() in ("1", "true", "yes")
+
     if not secret_key:
-        # Dev default; for production set BOTIFY_SECRET.
-        secret_key = "dev-secret-change-me"
+        if dev_mode:
+            secret_key = _DEV_SECRET
+        else:
+            raise RuntimeError(
+                "BOTIFY_SECRET is not set. "
+                "Generate one with:  openssl rand -hex 32\n"
+                "Set BOTIFY_DEV=1 to use an insecure default for local development."
+            )
+
+    if secret_key == _DEV_SECRET and not dev_mode:
+        raise RuntimeError(
+            "BOTIFY_SECRET is set to the dev default. "
+            "Generate a real secret with:  openssl rand -hex 32"
+        )
 
     database_url = os.getenv("BOTIFY_DATABASE_URL", "sqlite:///./botify.db")
 
-    # Default difficulties are intentionally small so browsers can solve them quickly.
-    # You can raise these on a VPS if you see spam.
     pow_register_bits = int(os.getenv("BOTIFY_POW_REGISTER_BITS", "16"))
     pow_submit_bits = int(os.getenv("BOTIFY_POW_SUBMIT_BITS", "15"))
     pow_vote_bits = int(os.getenv("BOTIFY_POW_VOTE_BITS", "13"))

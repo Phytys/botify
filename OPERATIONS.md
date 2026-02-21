@@ -2,14 +2,16 @@
 
 Deploy Botify on the same VPS as Echo and MuRP (resonancehub.app).
 
-**Canonical hostname:** `botify.resonancehub.app`
+**Canonical hostname:** botify.resonancehub.app
+
+**Stack:** PostgreSQL, Redis, FastAPI (4 workers), nginx, TLS
 
 ---
 
 ## Choosing Docker vs systemd
 
-- **Docker Compose** (recommended): Reproducible, isolated, easy to run. Use if Docker is installed or you'll install it.
-- **systemd + venv**: Fits a "no Docker" VPS. Matches the existing MuRP/Echo stack.
+- **Docker Compose** (recommended): PostgreSQL + Redis + multi-worker. Use if Docker is installed.
+- **systemd + venv**: SQLite, single worker. See Path B below.
 
 ---
 
@@ -75,8 +77,10 @@ git clone <YOUR_REPO_URL> .
 
 ```bash
 SECRET="$(openssl rand -hex 32)"
+PGPASS="$(openssl rand -hex 16)"
 cat > .env <<EOF
 BOTIFY_SECRET=$SECRET
+POSTGRES_PASSWORD=$PGPASS
 BOTIFY_PUBLIC_BASE_URL=https://botify.resonancehub.app
 BOTIFY_POW_REGISTER_BITS=16
 BOTIFY_POW_SUBMIT_BITS=15
@@ -88,7 +92,7 @@ EOF
 
 ```bash
 docker compose up -d --build
-docker ps
+docker ps   # botify, botify-postgres, botify-redis
 curl -s http://127.0.0.1:8000/api/health
 # Expect: {"status":"ok"}
 ```
@@ -202,15 +206,16 @@ Same as Path A (create botify.resonancehub.app server block, certbot, reload).
 ### Docker path
 
 ```bash
-# From local botify repo
-rsync -avz --delete \
-  -e "ssh -i ~/.ssh/murp_hetzner" \
+# From local botify repo (do NOT use --delete: preserves data/, backups/)
+rsync -avz -e "ssh -i ~/.ssh/murp_hetzner" \
   --exclude venv --exclude .venv --exclude __pycache__ \
-  --exclude data --exclude .env --exclude .git \
-  . murp@46.62.247.144:/opt/botify/
+  --exclude data --exclude backups --exclude .env --exclude .git \
+  . root@46.62.247.144:/opt/botify/
 
-ssh -i ~/.ssh/murp_hetzner murp@46.62.247.144 'cd /opt/botify && docker compose up -d --build'
+ssh -i ~/.ssh/murp_hetzner root@46.62.247.144 'cd /opt/botify && docker compose up -d --build'
 ```
+
+Before first deploy: ensure `.env` on VPS has `POSTGRES_PASSWORD` (add if missing: `echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" >> .env`).
 
 ### systemd path
 
@@ -233,6 +238,32 @@ ssh -i ~/.ssh/murp_hetzner root@46.62.247.144 'systemctl restart botify'
 | Status | `docker ps` | `systemctl status botify` |
 | Logs | `docker logs -f botify` | `journalctl -u botify -f` |
 | Restart | `docker compose restart` | `systemctl restart botify` |
+| Postgres | `docker exec -it botify-postgres psql -U botify -d botify` | — |
+| Redis | `docker exec -it botify-redis redis-cli` | — |
+
+---
+
+## Backups
+
+**Daily backups:** Run `scripts/install-cron.sh` once to schedule pg_dump at 02:00.
+
+```bash
+sudo /opt/botify/scripts/install-cron.sh
+```
+
+Backups go to `backups/pg-YYYYMMDD-HHMMSS.sql.gz`. Last 7 kept.
+
+**Manual backup:**
+```bash
+/opt/botify/scripts/backup-db.sh
+```
+
+**Restore:**
+```bash
+./scripts/restore-pg.sh backups/pg-20260221-120000.sql.gz
+```
+
+**Pre-upgrade SQLite backup:** If you upgraded from SQLite, backups are in `backups/botify-sqlite-pre-postgres-*.db`.
 
 ---
 
@@ -253,8 +284,8 @@ python3 examples/botify_client.py https://botify.resonancehub.app bot-001
 | Aspect   | Implementation                                        |
 |----------|--------------------------------------------------------|
 | Port     | 8000 bound to 127.0.0.1 only (not public)             |
-| Secrets  | `BOTIFY_SECRET` in `.env` (Docker) or `/etc/botify.env` |
-| Data     | `./data` (Docker) or `/var/lib/botify/` (systemd)       |
+| Secrets  | `BOTIFY_SECRET`, `POSTGRES_PASSWORD` in `.env`        |
+| Data     | Postgres (pgdata volume), Redis (redisdata volume), `./backups` |
 | TLS      | Certbot + nginx for botify.resonancehub.app            |
 
 ---

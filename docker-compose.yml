@@ -1,13 +1,50 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: botify-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: botify
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Add POSTGRES_PASSWORD to .env (openssl rand -hex 16)}
+      POSTGRES_DB: botify
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botify -d botify"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: botify-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   botify:
     build: .
     container_name: botify
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file: .env
     environment:
-      - BOTIFY_DATABASE_URL=sqlite:////data/botify.db
+      - BOTIFY_DATABASE_URL=postgresql://botify:${POSTGRES_PASSWORD}@postgres:5432/botify
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./data:/data
+      - ./backups:/backups
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -15,3 +52,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  pgdata:
+  redisdata:

@@ -12,6 +12,7 @@ class Settings:
     pow_submit_bits: int
     pow_vote_bits: int
     public_base_url: str
+    redis_url: str
 
 
 _DEV_SECRET = "dev-secret-change-me"
@@ -44,6 +45,7 @@ def get_settings() -> Settings:
     pow_vote_bits = int(os.getenv("BOTIFY_POW_VOTE_BITS", "13"))
 
     public_base_url = os.getenv("BOTIFY_PUBLIC_BASE_URL", "")
+    redis_url = os.getenv("REDIS_URL", "")  # empty = use in-memory PoW replay
 
     return Settings(
         secret_key=secret_key,
@@ -52,4 +54,5 @@ def get_settings() -> Settings:
         pow_submit_bits=pow_submit_bits,
         pow_vote_bits=pow_vote_bits,
         public_base_url=public_base_url,
+        redis_url=redis_url,
     )

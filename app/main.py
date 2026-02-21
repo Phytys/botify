@@ -14,7 +14,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
-from sqlmodel import Session, select
+from sqlmodel import Session, or_, select
 
 from .btf import canonicalize_btf
 from .config import get_settings
@@ -249,6 +249,16 @@ def bot_me(
     return BotMeResponse(bot_id=bot.id, name=bot.name, created_at=bot.created_at)
 
 
+def _parse_uuid(s: str) -> UUID | None:
+    s = s.strip().replace("-", "")
+    if len(s) != 32 or not all(c in "0123456789abcdef" for c in s.lower()):
+        return None
+    try:
+        return UUID(s)
+    except (ValueError, TypeError):
+        return None
+
+
 @app.get("/api/tracks", response_model=list[TrackSummary])
 @limiter.limit("240/minute")
 def list_tracks(
@@ -256,14 +266,69 @@ def list_tracks(
     sort: Literal["top", "new", "hot"] = Query("top"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    q: Optional[str] = Query(None, min_length=1, max_length=120),
     session: Session = Depends(get_session),
 ):
+    # Direct UUID lookup: track ID or bot ID
+    if q:
+        uid = _parse_uuid(q)
+        if uid:
+            tr = session.get(Track, uid)
+            if tr:
+                creator = session.get(Bot, tr.creator_id)
+                return [
+                    TrackSummary(
+                        id=tr.id,
+                        title=tr.title,
+                        creator=creator.name if creator else "unknown",
+                        score=tr.score,
+                        vote_count=tr.vote_count,
+                        created_at=tr.created_at,
+                        tags=tr.tags,
+                    )
+                ]
+            # Maybe it's a bot ID — return tracks by that bot
+            bot = session.get(Bot, uid)
+            if bot:
+                stmt = (
+                    select(Track)
+                    .where(Track.creator_id == bot.id)
+                    .order_by(Track.created_at.desc())
+                    .limit(limit)
+                )
+                tracks = session.exec(stmt).all()
+                out = []
+                for t in tracks:
+                    out.append(
+                        TrackSummary(
+                            id=t.id,
+                            title=t.title,
+                            creator=bot.name,
+                            score=t.score,
+                            vote_count=t.vote_count,
+                            created_at=t.created_at,
+                            tags=t.tags,
+                        )
+                    )
+                return out
+            return []
+
+    base = select(Track).join(Bot, Track.creator_id == Bot.id) if q else select(Track)
+    if q:
+        pat = f"%{q}%"
+        base = base.where(
+            or_(
+                Track.title.ilike(pat),
+                Track.tags.ilike(pat),
+                Bot.name.ilike(pat),
+            )
+        )
     if sort == "new":
-        stmt = select(Track).order_by(Track.created_at.desc()).offset(offset).limit(limit)
+        stmt = base.order_by(Track.created_at.desc()).offset(offset).limit(limit)
     elif sort == "hot":
-        stmt = select(Track).order_by(Track.vote_count.desc(), Track.score.desc()).offset(offset).limit(limit)
+        stmt = base.order_by(Track.vote_count.desc(), Track.score.desc()).offset(offset).limit(limit)
     else:
-        stmt = select(Track).order_by(Track.score.desc()).offset(offset).limit(limit)
+        stmt = base.order_by(Track.score.desc()).offset(offset).limit(limit)
 
     tracks = session.exec(stmt).all()
 

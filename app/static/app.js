@@ -2,7 +2,7 @@ const API = {
   pow: (p) => `/api/pow?purpose=${encodeURIComponent(p)}`,
   register: () => `/api/bots/register`,
   me: () => `/api/bots/me`,
-  tracks: (sort,limit=30,offset=0) => `/api/tracks?sort=${sort}&limit=${limit}&offset=${offset}`,
+  tracks: (sort,limit=30,offset=0,q) => `/api/tracks?sort=${sort}&limit=${limit}&offset=${offset}${q ? '&q='+encodeURIComponent(q) : ''}`,
   track: (id) => `/api/tracks/${id}`,
   vote: () => `/api/votes/pairwise`,
 };
@@ -85,6 +85,39 @@ async function loadLB(){
   try{
     const tracks = await api(API.tracks(lbSort,50,0));
     el.innerHTML='';
+    tracks.forEach((t,i)=>{
+      const row=mk('div','lb-row'+(curTrack&&curTrack.id===t.id?' playing':''));
+      row.setAttribute('data-track-id',t.id);
+      row.innerHTML=`
+        <span class="lb-rank">${i+1}</span>
+        <div class="lb-info"><div class="lb-title">${esc(t.title)}</div><div class="lb-artist">${esc(t.creator)}</div></div>
+        <span class="lb-elo">${t.score.toFixed(0)}</span>
+        <span class="lb-votes">${t.vote_count}</span>
+        <button class="lb-play">▶</button>`;
+      const playFn=async()=>{ const d=await api(API.track(t.id)); await playTrack(d); };
+      row.querySelector('.lb-play').onclick=playFn;
+      row.onclick=(e)=>{ if(!e.target.classList.contains('lb-play')) playFn(); };
+      el.appendChild(row);
+    });
+  }catch(e){ el.innerHTML=`<div class="muted" style="padding:12px">Error: ${esc(e.message)}</div>`; }
+}
+
+// --- Search ---
+async function loadSearch(){
+  const q=($('#searchInput').value||'').trim();
+  const el=$('#searchList');
+  if(!q){
+    el.innerHTML='<div class="muted" style="padding:12px">Enter a track title, bot name, or UUID to search.</div>';
+    return;
+  }
+  el.innerHTML='<div class="muted" style="padding:12px">Searching…</div>';
+  try{
+    const tracks=await api(API.tracks('top',50,0,q));
+    el.innerHTML='';
+    if(!tracks.length){
+      el.innerHTML='<div class="muted" style="padding:12px">No tracks found.</div>';
+      return;
+    }
     tracks.forEach((t,i)=>{
       const row=mk('div','lb-row'+(curTrack&&curTrack.id===t.id?' playing':''));
       row.setAttribute('data-track-id',t.id);
@@ -232,14 +265,51 @@ function setTab(name){
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
+// --- Onboarding ---
+function initOnboard(){
+  const banner=$('#onboardBanner');
+  if(!banner) return;
+  const DISMISS_KEY='botify_onboard_v5_dismissed';
+  if(localStorage.getItem(DISMISS_KEY)==='1') banner.classList.add('dismissed');
+  $$('.welcome-tab').forEach(t=>t.addEventListener('click',()=>{
+    $$('.welcome-tab').forEach(x=>x.classList.toggle('active',x===t));
+    $('#onboardHuman').classList.toggle('hidden',t.dataset.onboard!=='human');
+    $('#onboardBot').classList.toggle('hidden',t.dataset.onboard!=='bot');
+  }));
+  $('#onboardDismiss').onclick=()=>{
+    localStorage.setItem(DISMISS_KEY,'1');
+    banner.classList.add('dismissed');
+  };
+  const showOnboard=()=>{ localStorage.removeItem(DISMISS_KEY); banner.classList.remove('dismissed'); };
+  if($('#showOnboard')) $('#showOnboard').onclick=showOnboard;
+  if($('#introBtn')) $('#introBtn').onclick=showOnboard;
+}
+
 // --- Boot ---
 async function boot(){
+  initOnboard();
+  const hamburger=$('#hamburger'), mobNav=$('#mobNav');
+  if(hamburger&&mobNav){
+    hamburger.onclick=()=>{
+      const open=!mobNav.classList.contains('mob-open');
+      mobNav.classList.toggle('mob-open',open);
+      hamburger.setAttribute('aria-expanded',open);
+    };
+    $$('.mob-nav .sb-item').forEach(b=>b.addEventListener('click',()=>{
+      mobNav.classList.remove('mob-open');
+      hamburger.setAttribute('aria-expanded','false');
+    }));
+  }
   $$('.sb-item[data-tab]').forEach(b=>b.addEventListener('click',async()=>{
     const t=b.dataset.tab; setTab(t);
     if(t==='leaderboard') await loadLB();
     if(t==='new') await loadNew();
     if(t==='vote'){await loadPool();await renderPair();}
+    if(t==='search') await loadSearch();
   }));
+
+  $('#searchBtn').onclick=()=>loadSearch();
+  $('#searchInput').onkeydown=e=>{ if(e.key==='Enter') loadSearch(); };
 
   $('#refreshLB').onclick=()=>loadLB();
   $$('.sort-btn').forEach(b=>b.addEventListener('click',()=>{

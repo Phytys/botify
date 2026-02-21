@@ -103,20 +103,47 @@ def verify_pow_solution(token: str, counter: int, diff_bits: int) -> bool:
     return leading_zero_bits(digest) >= diff_bits
 
 
-# --- Single-use PoW replay guard (in-memory, single-instance) ---
+# --- Single-use PoW replay guard (Redis if configured, else in-memory) ---
 
 _used_lock = threading.Lock()
 _used_tokens: dict[str, float] = {}
+_redis_client = None
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    redis_url = __import__("os").environ.get("REDIS_URL", "").strip()
+    if not redis_url:
+        return None
+    try:
+        import redis as redis_lib
+        _redis_client = redis_lib.from_url(redis_url, decode_responses=True)
+        _redis_client.ping()
+        return _redis_client
+    except Exception:
+        return None
 
 
 def mark_pow_used(token: str, expiry: float) -> None:
     """Mark a solved PoW token as consumed. Raises ValueError if replayed."""
-    key = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    now = time.time()
+    key_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    redis_key = f"botify:pow:used:{key_hash}"
+    ttl_seconds = max(60, int(expiry - time.time()))
+
+    r = _get_redis()
+    if r is not None:
+        if r.set(redis_key, "1", nx=True, ex=ttl_seconds):
+            return
+        raise ValueError("POW token already used")
+
+    # Fallback: in-memory (single-instance only)
     with _used_lock:
+        now = time.time()
         expired = [k for k, exp in _used_tokens.items() if exp < now]
         for k in expired:
             del _used_tokens[k]
-        if key in _used_tokens:
+        if key_hash in _used_tokens:
             raise ValueError("POW token already used")
-        _used_tokens[key] = expiry
+        _used_tokens[key_hash] = expiry

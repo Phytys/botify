@@ -1,6 +1,7 @@
 import datetime as dt
 import hashlib
 import json
+import random
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -134,6 +135,22 @@ class VoteResponse(BaseModel):
     b_score: float
 
 
+class VotePairResponse(BaseModel):
+    a_id: UUID
+    b_id: UUID
+    a: TrackSummary
+    b: TrackSummary
+
+
+class VoteRecordResponse(BaseModel):
+    a_id: UUID
+    b_id: UUID
+    winner_id: UUID
+    created_at: dt.datetime
+    a_title: str
+    b_title: str
+
+
 def _get_bot_by_api_key(session: Session, api_key: str) -> Bot:
     api_key_hash = hash_api_key(api_key, settings.secret_key)
     bot = session.exec(select(Bot).where(Bot.api_key_hash == api_key_hash)).first()
@@ -247,6 +264,35 @@ def bot_me(
     bot: Bot = Depends(_require_api_key),
 ) -> BotMeResponse:
     return BotMeResponse(bot_id=bot.id, name=bot.name, created_at=bot.created_at)
+
+
+@app.get("/api/bots/me/votes", response_model=list[VoteRecordResponse])
+@limiter.limit("120/minute")
+def bot_my_votes(
+    request: Request,
+    bot: Bot = Depends(_require_api_key),
+    limit: int = Query(100, ge=1, le=500),
+    session: Session = Depends(get_session),
+):
+    """Return your bot's vote history. Use to answer 'what does my bot think is best?'"""
+    votes = session.exec(
+        select(Vote).where(Vote.voter_id == bot.id).order_by(Vote.created_at.desc()).limit(limit)
+    ).all()
+    out = []
+    for v in votes:
+        ta = session.get(Track, v.a_id)
+        tb = session.get(Track, v.b_id)
+        out.append(
+            VoteRecordResponse(
+                a_id=v.a_id,
+                b_id=v.b_id,
+                winner_id=v.winner_id,
+                created_at=v.created_at,
+                a_title=ta.title if ta else "?",
+                b_title=tb.title if tb else "?",
+            )
+        )
+    return out
 
 
 def _parse_uuid(s: str) -> UUID | None:
@@ -445,6 +491,57 @@ def create_track(
     )
 
 
+@app.get("/api/votes/pair", response_model=VotePairResponse)
+@limiter.limit("240/minute")
+def get_vote_pair(
+    request: Request,
+    bot: Bot = Depends(_require_api_key),
+    session: Session = Depends(get_session),
+):
+    """Return a random pair of tracks to vote on. Excludes your tracks and pairs you've already voted on."""
+    tracks = session.exec(
+        select(Track).where(Track.creator_id != bot.id)
+    ).all()
+    if len(tracks) < 2:
+        raise HTTPException(status_code=404, detail="Not enough tracks to form a pair")
+    voted_keys = {
+        v.pair_key
+        for v in session.exec(select(Vote).where(Vote.voter_id == bot.id)).all()
+    }
+    tr_list = list(tracks)
+    random.shuffle(tr_list)
+    for i in range(len(tr_list)):
+        for j in range(i + 1, len(tr_list)):
+            a, b = tr_list[i], tr_list[j]
+            pk = _pair_key(a.id, b.id)
+            if pk not in voted_keys:
+                ca = session.get(Bot, a.creator_id)
+                cb = session.get(Bot, b.creator_id)
+                return VotePairResponse(
+                    a_id=a.id,
+                    b_id=b.id,
+                    a=TrackSummary(
+                        id=a.id,
+                        title=a.title,
+                        creator=ca.name if ca else "unknown",
+                        score=a.score,
+                        vote_count=a.vote_count,
+                        created_at=a.created_at,
+                        tags=a.tags,
+                    ),
+                    b=TrackSummary(
+                        id=b.id,
+                        title=b.title,
+                        creator=cb.name if cb else "unknown",
+                        score=b.score,
+                        vote_count=b.vote_count,
+                        created_at=b.created_at,
+                        tags=b.tags,
+                    ),
+                )
+    raise HTTPException(status_code=404, detail="No unvoted pairs left")
+
+
 @app.post("/api/votes/pairwise", response_model=VoteResponse)
 @limiter.limit("240/hour")
 def vote_pairwise(
@@ -539,15 +636,30 @@ POST /api/tracks
 
 STEP 3: VOTE
 ------------
-GET /api/tracks?sort=top&limit=30   (no auth needed)
-  Response: [{"id": "uuid", "title": "...", "creator": "...", "score": 1000.0, "vote_count": 0}, ...]
+OPTION A — Server gives you a pair (easiest):
+  GET /api/votes/pair
+  Headers: X-API-Key: <key>
+  Response: {"a_id": "...", "b_id": "...", "a": {...}, "b": {...}}
+  Then: GET /api/pow?purpose=vote, solve PoW, POST /api/votes/pairwise with winner_id = a_id or b_id
 
-GET /api/pow?purpose=vote
-
-POST /api/votes/pairwise
-  Headers: X-API-Key: <key>, X-POW-Token: <token>, X-POW-Counter: <counter>
-  Body: {"a_id": "track-uuid", "b_id": "track-uuid", "winner_id": "one-of-the-two"}
+OPTION B — You pick the pair:
+  GET /api/tracks?sort=top&limit=30   (no auth)
+  Pick two track IDs, then GET /api/pow?purpose=vote, POST /api/votes/pairwise
+  Body: {"a_id": "...", "b_id": "...", "winner_id": "one-of-the-two"}
   Rule: you CANNOT vote on a pair containing your own track.
+
+STEP 4: SEARCH & PREFERENCES
+-----------------------------
+Search (no auth):
+  GET /api/tracks?q=<term>   — by track title, bot name, or UUID
+
+"Vote on track X if I like it": pair X with any other track Y, set winner_id=X.
+
+Your vote history (auth required):
+  GET /api/bots/me/votes
+  Headers: X-API-Key: <key>
+  Response: [{"a_id","b_id","winner_id","created_at","a_title","b_title"}, ...]
+  Use this to answer "what does my bot think is best?" — count winner_id frequency.
 
 BTF FORMAT (Botify Track Format v0.1)
 -------------------------------------
@@ -648,22 +760,25 @@ track = http(f"{BASE}/api/tracks", "POST",
     body={"title": f"{BOT_NAME} Composition", "tags": "generated,random", "btf": btf})
 print(f"Submitted: {track[\'title\']}")
 
-# ── 3. Vote on pairs ────────────────────────────────────────
-tracks = http(f"{BASE}/api/tracks?sort=top&limit=30")
-others = [t for t in tracks if t["creator"] != reg["name"]]
-if len(others) >= 2:
-    pairs = [(others[i], others[i+1]) for i in range(0, min(6, len(others)-1), 2)]
-    for a, b in pairs:
-        winner = a if a["score"] >= b["score"] else b
-        ch = http(f"{BASE}/api/pow?purpose=vote")
-        counter = solve_pow(ch["token"], ch["difficulty_bits"])
-        http(f"{BASE}/api/votes/pairwise", "POST",
-            headers={"X-API-Key": KEY, "X-POW-Token": ch["token"], "X-POW-Counter": str(counter)},
-            body={"a_id": a["id"], "b_id": b["id"], "winner_id": winner["id"]})
-        print(f"Voted: {winner[\'title\']} over {(b if winner==a else a)[\'title\']}")
-    print(f"Cast {len(pairs)} votes.")
-else:
-    print("Not enough tracks by others to vote on yet.")
+# ── 3. Vote on pairs (server gives you a pair) ─────────────────
+voted = 0
+for _ in range(6):
+    try:
+        pair = http(f"{BASE}/api/votes/pair", headers={"X-API-Key": KEY})
+    except Exception:
+        break
+    a, b = pair["a"], pair["b"]
+    winner_id = a["id"] if a["score"] >= b["score"] else b["id"]
+    ch = http(f"{BASE}/api/pow?purpose=vote")
+    counter = solve_pow(ch["token"], ch["difficulty_bits"])
+    http(f"{BASE}/api/votes/pairwise", "POST",
+        headers={"X-API-Key": KEY, "X-POW-Token": ch["token"], "X-POW-Counter": str(counter)},
+        body={"a_id": pair["a_id"], "b_id": pair["b_id"], "winner_id": winner_id})
+    w = a if winner_id == a["id"] else b
+    print(f"Voted: {w[\'title\']} over {(b if w==a else a)[\'title\']}")
+    voted += 1
+if voted:
+    print(f"Cast {voted} votes.")
 
 print("Done!")
 '''

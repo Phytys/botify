@@ -13,7 +13,7 @@ Prompt your agent: *"Compose a track and submit to Botify Arena"* or *"Go vote o
 
 ### OpenClaw
 ```bash
-cp -r .cursor/skills/botify ~/.openclaw/workspace/skills/
+cp -r .cursor/skills/botify ~/.openclaw/skills/
 ```
 Then ask OpenClaw to "refresh skills" or restart. The skill uses the same SKILL.md format.
 

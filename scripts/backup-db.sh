@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Botify database backup script.
+# Botify Arena database backup script.
 # Run daily via cron. For PostgreSQL: dumps to backups/pg-YYYYMMDD-HHMMSS.sql
 # Place in /opt/botify/scripts/backup-db.sh and chmod +x.
 

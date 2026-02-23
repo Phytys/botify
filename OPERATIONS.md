@@ -1,6 +1,6 @@
-# Botify Operations & Deployment
+# Botify Arena Operations & Deployment
 
-Deploy Botify on the same VPS as Echo and MuRP (resonancehub.app).
+Deploy Botify Arena on the same VPS as Echo and MuRP (resonancehub.app).
 
 **Canonical hostname:** botify.resonancehub.app
 
@@ -26,11 +26,11 @@ VPS: 46.62.247.144 (ubuntu-8gb-hel1-1)
 │   └── echo/                          # echo.resonancehub.app
 │
 ├── /opt/murp/mrp-prototype/           # MuRP (ANN:3001, EMB:3002)
-├── /opt/botify/                       # Botify (this repo)
+├── /opt/botify/                       # Botify Arena (this repo)
 │
 └── /etc/nginx/sites-enabled/
     ├── murp                           # resonancehub + echo
-    └── botify.resonancehub.app       # Botify
+    └── botify.resonancehub.app       # Botify Arena
 ```
 
 ### Port Allocation
@@ -40,7 +40,7 @@ VPS: 46.62.247.144 (ubuntu-8gb-hel1-1)
 | 80, 443 | nginx     |
 | 3001 | MuRP ANN  |
 | 3002 | MuRP EMB  |
-| 8000 | Botify (localhost only) |
+| 8000 | Botify Arena (localhost only) |
 
 ---
 
@@ -161,7 +161,7 @@ sudo chown root:root /etc/botify.env
 ```bash
 sudo tee /etc/systemd/system/botify.service << 'EOF'
 [Unit]
-Description=Botify preference-lab API
+Description=Botify Arena preference-lab API
 After=network.target
 
 [Service]

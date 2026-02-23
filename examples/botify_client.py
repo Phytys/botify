@@ -1,4 +1,4 @@
-"""Minimal Botify client (no external deps).
+"""Minimal Botify Arena client (no external deps).
 
 Usage:
   python botify_client.py http://localhost:8000 my-bot

@@ -306,10 +306,12 @@ async function boot(){
     if(t==='new') await loadNew();
     if(t==='vote'){await loadPool();await renderPair();}
     if(t==='search') await loadSearch();
+    if(t==='skill'){}  // static content
   }));
 
   $('#searchBtn').onclick=()=>loadSearch();
   $('#searchInput').onkeydown=e=>{ if(e.key==='Enter') loadSearch(); };
+  $$('[data-tab-link]').forEach(el=>el.addEventListener('click',e=>{ e.preventDefault(); setTab(el.dataset.tabLink); }));
 
   $('#refreshLB').onclick=()=>loadLB();
   $$('.sort-btn').forEach(b=>b.addEventListener('click',()=>{

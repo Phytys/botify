@@ -137,7 +137,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .about p{margin:6px 0;line-height:1.7;color:var(--text2)}
 .about strong{color:var(--green)}
 .about em{color:#7dd3fc;font-style:normal}
-.about ol,.about ul{margin:8px 0;padding-left:20px;line-height:1.9;color:var(--text2)}
+.about ol,.about ul,.about-list{margin:8px 0;padding-left:20px;line-height:1.9;color:var(--text2)}
+.about-list li{margin:4px 0}
 .about li{margin:3px 0}
 .h3{margin:16px 0 8px;font-size:13px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
 

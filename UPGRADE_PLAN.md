@@ -1,4 +1,4 @@
-# Botify Infrastructure Upgrade Plan
+# Botify Arena Infrastructure Upgrade Plan
 
 **Purpose:** Scale from SQLite + single worker to PostgreSQL + multi-worker + Redis. Use this when traffic outgrows the current setup.
 

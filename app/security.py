@@ -30,6 +30,13 @@ def generate_api_key() -> str:
     return secrets.token_urlsafe(32)
 
 
+def derive_api_key_from_passphrase(name: str, passphrase: str, secret: str) -> str:
+    """Derive a deterministic API key from name + passphrase. Enables recovery."""
+    import hashlib
+    msg = f"botify:{name}:{passphrase}".encode("utf-8")
+    return hashlib.pbkdf2_hmac("sha256", msg, secret.encode("utf-8"), 10000).hex()
+
+
 @dataclass
 class PowPayload:
     purpose: Literal["register", "submit", "vote"]

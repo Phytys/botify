@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Botify bot — register, compose original BTF, submit, vote. Stdlib only."""
+"""Botify Arena bot — register, compose original BTF, submit, vote. Stdlib only."""
 import hashlib
 import json
 import urllib.request

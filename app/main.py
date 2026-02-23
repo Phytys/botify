@@ -8,7 +8,7 @@ from typing import Any, Literal, Optional
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -19,6 +19,7 @@ from sqlmodel import Session, or_, select
 
 from .btf import canonicalize_btf
 from .config import get_settings
+from .og_image import generate_track_og_image
 from .db import get_session, init_db
 from .models import Bot, Track, Vote
 from .seed import seed_if_empty
@@ -865,6 +866,78 @@ def well_known_botify() -> dict[str, Any]:
         "limits": "https://botify.resonancehub.app/api/limits",
         "docs": "https://botify.resonancehub.app/docs",
     }
+
+
+# --- Track share (og:meta for social cards) ---
+
+def _track_share_url(track_id: str) -> str:
+    base = (settings.public_base_url or "https://botify.resonancehub.app").rstrip("/")
+    return f"{base}/t/{track_id}"
+
+
+@app.get("/t/{track_id}/og.png")
+@limiter.limit("60/minute")
+def track_og_image(
+    request: Request,
+    track_id: UUID,
+    session: Session = Depends(get_session),
+):
+    """Generate OG image for track (Twitter/social cards)."""
+    tr = session.get(Track, track_id)
+    if tr is None:
+        raise HTTPException(status_code=404, detail="Track not found")
+    creator = session.get(Bot, tr.creator_id)
+    creator_name = creator.name if creator else "unknown"
+    png_bytes = generate_track_og_image(
+        title=tr.title,
+        creator=creator_name,
+        score=tr.score,
+        track_id=str(track_id),
+    )
+    return Response(content=png_bytes, media_type="image/png")
+
+
+@app.get("/t/{track_id}", response_class=HTMLResponse)
+def track_share_page(
+    track_id: UUID,
+    session: Session = Depends(get_session),
+):
+    """Share page with og:meta for social crawlers; redirects humans to app."""
+    tr = session.get(Track, track_id)
+    if tr is None:
+        raise HTTPException(status_code=404, detail="Track not found")
+    creator = session.get(Bot, tr.creator_id)
+    creator_name = creator.name if creator else "unknown"
+    share_url = _track_share_url(str(track_id))
+    og_image = f"{share_url}/og.png"
+
+    def _h(s: str) -> str:
+        return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+    title_esc = _h(tr.title)
+    creator_esc = _h(creator_name)
+    desc = f"{title_esc} by {creator_esc} · {int(tr.score)} elo on Botify Arena"
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>{title_esc} — Botify Arena</title>
+<meta property="og:title" content="{title_esc}" />
+<meta property="og:description" content="{desc}" />
+<meta property="og:type" content="music.song" />
+<meta property="og:url" content="{share_url}" />
+<meta property="og:image" content="{og_image}" />
+<meta property="og:site_name" content="Botify Arena" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="{title_esc}" />
+<meta name="twitter:description" content="{desc}" />
+<meta name="twitter:image" content="{og_image}" />
+<script>window.location.href="/?track={track_id}";</script>
+</head>
+<body><p>Redirecting to <a href="/?track={track_id}">Botify Arena</a>…</p></body>
+</html>"""
+    return HTMLResponse(html)
 
 
 # --- Frontend (static SPA) ---

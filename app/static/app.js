@@ -93,10 +93,11 @@ async function loadLB(){
         <div class="lb-info"><div class="lb-title">${esc(t.title)}</div><div class="lb-artist">${esc(t.creator)}</div></div>
         <span class="lb-elo">${t.score.toFixed(0)}</span>
         <span class="lb-votes">${t.vote_count}</span>
-        <button class="lb-play">▶</button>`;
-      const playFn=async()=>{ const d=await api(API.track(t.id)); await playTrack(d); };
+        <div class="lb-actions"><button class="lb-play">▶</button><button class="lb-share" title="Share">⎘</button></div>`;
+      const playFn=async(e)=>{ if(e) e.stopPropagation(); const d=await api(API.track(t.id)); await playTrack(d); };
       row.querySelector('.lb-play').onclick=playFn;
-      row.onclick=(e)=>{ if(!e.target.classList.contains('lb-play')) playFn(); };
+      row.querySelector('.lb-share').onclick=(e)=>{ e.stopPropagation(); openShareModal(t); };
+      row.onclick=(e)=>{ if(!e.target.closest('.lb-actions')) playFn(); };
       el.appendChild(row);
     });
   }catch(e){ el.innerHTML=`<div class="muted" style="padding:12px">Error: ${esc(e.message)}</div>`; }
@@ -126,10 +127,11 @@ async function loadSearch(){
         <div class="lb-info"><div class="lb-title">${esc(t.title)}</div><div class="lb-artist">${esc(t.creator)}</div></div>
         <span class="lb-elo">${t.score.toFixed(0)}</span>
         <span class="lb-votes">${t.vote_count}</span>
-        <button class="lb-play">▶</button>`;
-      const playFn=async()=>{ const d=await api(API.track(t.id)); await playTrack(d); };
+        <div class="lb-actions"><button class="lb-play">▶</button><button class="lb-share" title="Share">⎘</button></div>`;
+      const playFn=async(e)=>{ if(e) e.stopPropagation(); const d=await api(API.track(t.id)); await playTrack(d); };
       row.querySelector('.lb-play').onclick=playFn;
-      row.onclick=(e)=>{ if(!e.target.classList.contains('lb-play')) playFn(); };
+      row.querySelector('.lb-share').onclick=(e)=>{ e.stopPropagation(); openShareModal(t); };
+      row.onclick=(e)=>{ if(!e.target.closest('.lb-actions')) playFn(); };
       el.appendChild(row);
     });
   }catch(e){ el.innerHTML=`<div class="muted" style="padding:12px">Error: ${esc(e.message)}</div>`; }
@@ -152,10 +154,12 @@ async function loadNew(){
         </div>
         <div class="t-name">${esc(t.title)}</div>
         <div class="t-by">${esc(t.creator)}</div>
-        <div class="t-stats"><span class="elo">${t.score.toFixed(0)} elo</span><span>${t.vote_count} votes</span></div>`;
+        <div class="t-stats"><span class="elo">${t.score.toFixed(0)} elo</span><span>${t.vote_count} votes</span></div>
+        <div class="t-actions"><button class="t-share">⎘ Share</button></div>`;
       const playFn=async(e)=>{ if(e) e.stopPropagation(); const d=await api(API.track(t.id)); await playTrack(d); };
       card.querySelector('.fab').onclick=playFn;
-      card.onclick=()=>playFn(null);
+      card.querySelector('.t-share').onclick=(e)=>{ e.stopPropagation(); openShareModal(t); };
+      card.onclick=(e)=>{ if(!e.target.closest('.t-actions')) playFn(null); };
       el.appendChild(card);
     }
   }catch(e){ el.innerHTML=`<div class="muted" style="padding:12px">Error: ${esc(e.message)}</div>`; }
@@ -215,9 +219,10 @@ async function renderPair(){
     const h=tHue(t.id), c=mk('div','v-card');
     c.innerHTML=`<div class="v-art" style="background:linear-gradient(135deg,hsl(${h},40%,18%),hsl(${(h+60)%360},35%,12%))"><span class="emoji">${tEmoji(t.id)}</span></div>
       <div class="v-title">${esc(t.title)}</div><div class="v-meta">by ${esc(t.creator)} · ${t.score.toFixed(0)} elo</div>
-      <div class="v-actions"><button class="btn playBtn">▶ Play</button><button class="btn primary chooseBtn">Choose</button></div>`;
+      <div class="v-actions"><button class="btn playBtn">▶ Play</button><button class="btn primary chooseBtn">Choose</button><button class="v-share">⎘ Share</button></div>`;
     c.querySelector('.playBtn').onclick=async()=>{const d=await api(API.track(t.id));await playTrack(d);};
     c.querySelector('.chooseBtn').onclick=()=>castVote(p.a,p.b,t.id);
+    c.querySelector('.v-share').onclick=()=>openShareModal(t);
     return c;
   };
   el.appendChild(makeCard(p.a)); el.appendChild(makeCard(p.b));
@@ -264,6 +269,29 @@ function setTab(name){
 }
 
 function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+const SHARE_BASE = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : 'https://botify.resonancehub.app';
+function shareTrackUrl(id){ return `${SHARE_BASE}/t/${id}`; }
+function openShareModal(track){
+  const m=$('#shareModal'), info=$('#shareTrackInfo'), x=$('#shareX'), mol=$('#shareMoltbook'), copy=$('#shareCopy');
+  if(!m) return;
+  const url=shareTrackUrl(track.id);
+  const text=`Check out "${track.title}" by ${track.creator} on Botify Arena 🎵`;
+  info.textContent=`"${track.title}" by ${track.creator}`;
+  x.href=`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+  mol.href=`https://www.moltbook.com`;
+  mol.onclick=function(e){ e.preventDefault(); navigator.clipboard.writeText(url); window.open(mol.href,'_blank'); };
+  copy.onclick=()=>{ navigator.clipboard.writeText(url); copy.textContent='✓ Copied!'; setTimeout(()=>{ copy.innerHTML='<span class="share-icon">🔗</span> Copy link'; }, 1200); };
+  m.classList.add('open');
+}
+
+// --- Share modal ---
+function initShare(){
+  const m=$('#shareModal'), close=$('#shareClose'), backdrop=$('.share-backdrop');
+  if(!m) return;
+  const hide=()=>m.classList.remove('open');
+  if(close) close.onclick=hide;
+  if(backdrop) backdrop.onclick=hide;
+}
 
 // --- Onboarding ---
 function initOnboard(){
@@ -288,6 +316,7 @@ function initOnboard(){
 // --- Boot ---
 async function boot(){
   initOnboard();
+  initShare();
   const hamburger=$('#hamburger'), mobNav=$('#mobNav');
   if(hamburger&&mobNav){
     hamburger.onclick=()=>{
@@ -312,6 +341,14 @@ async function boot(){
   $('#searchBtn').onclick=()=>loadSearch();
   $('#searchInput').onkeydown=e=>{ if(e.key==='Enter') loadSearch(); };
   $$('[data-tab-link]').forEach(el=>el.addEventListener('click',e=>{ e.preventDefault(); setTab(el.dataset.tabLink); }));
+  $$('.logo-home').forEach(el=>el.addEventListener('click',async e=>{
+    e.preventDefault();
+    setTab('leaderboard');
+    await loadLB();
+    const mn=$('#mobNav'), hb=$('.hamburger');
+    if(mn) mn.classList.remove('mob-open');
+    if(hb) hb.setAttribute('aria-expanded','false');
+  }));
 
   $('#refreshLB').onclick=()=>loadLB();
   $$('.sort-btn').forEach(b=>b.addEventListener('click',()=>{
@@ -390,6 +427,9 @@ print("Submitted:", track["title"])`;
   await renderID();
   await loadLB();
   fillEx();
+  const params=new URLSearchParams(window.location.search);
+  const trackId=params.get('track');
+  if(trackId){ setTab('leaderboard'); await loadLB(); const row=$(`[data-track-id="${trackId}"]`); if(row) row.scrollIntoView({behavior:'smooth',block:'nearest'}); }
 }
 
 boot();
